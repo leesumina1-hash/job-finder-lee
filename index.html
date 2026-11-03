@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>부릉부릉이 - 1인칭 3D 레이싱</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js for 3D Graphics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: #0f172a;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        /* Custom UI Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .btn-touch {
+            active: scale-95;
+            transition: transform 0.1s ease, background-color 0.1s ease;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden text-white flex flex-col justify-center items-center">
+
+    <!-- 3D Canvas Area -->
+    <div id="canvas-container" class="relative w-full h-full max-w-md md:max-w-xl mx-auto shadow-2xl bg-black overflow-hidden">
+        
+        <!-- HUD / Playing Overlay -->
+        <div id="hud" class="hidden absolute top-0 left-0 right-0 p-4 z-10 flex justify-between items-start pointer-events-none">
+            <!-- Distance & Score -->
+            <div class="glass-panel px-4 py-2 rounded-xl border border-slate-700 relative">
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wider">주행 거리 / 점수</div>
+                <div class="text-2xl font-black text-amber-400">
+                    <span id="hud-distance">0.0</span>m 
+                    <span class="text-xs font-normal text-slate-300">(<span id="hud-score">0</span>점)</span>
+                </div>
+                <!-- Boost score indicator (+1 animation target) -->
+                <div id="score-popup" class="absolute -bottom-6 left-4 text-emerald-400 font-bold text-sm opacity-0 transition-opacity duration-300 pointer-events-none">+1 점! (부스터)</div>
+            </div>
+
+            <!-- Time & Boost Gauge -->
+            <div class="glass-panel px-4 py-2 rounded-xl border border-slate-700 flex flex-col items-end">
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wider">남은 시간</div>
+                <div id="hud-timer" class="text-2xl font-black text-cyan-400">30.00s</div>
+                
+                <!-- Boost Gauge Bar -->
+                <div class="w-28 bg-slate-800 h-2 rounded-full mt-2 overflow-hidden border border-slate-600">
+                    <div id="hud-boost-bar" class="bg-gradient-to-r from-amber-500 to-red-500 h-full w-0 transition-all duration-75"></div>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-0.5">Shift: 드리프트 충전</div>
+            </div>
+        </div>
+
+        <!-- Slowed Effect Indicator -->
+        <div id="warning-overlay" class="hidden absolute inset-0 bg-red-600/20 border-4 border-red-500 pointer-events-none z-10 animate-pulse flex items-center justify-center">
+            <span class="bg-red-600 text-white font-extrabold px-4 py-1 rounded-full text-sm">충돌! 50% 감속 중</span>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="absolute inset-0 z-20 flex flex-col justify-between p-6 glass-panel bg-slate-950/90 text-center">
+            <div class="my-auto space-y-4">
+                <div class="inline-block p-3 bg-amber-500/20 rounded-2xl border border-amber-500/30 mb-2">
+                    <svg class="w-12 h-12 text-amber-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">부릉부릉이</h1>
+                <p class="text-slate-300 text-sm font-medium">30초 동안 돌멩이와 벽을 피해 50m 결승선을 돌파하세요!</p>
+                
+                <!-- Controls guide -->
+                <div class="bg-slate-900/80 p-4 rounded-xl text-xs text-slate-300 text-left space-y-2 border border-slate-800">
+                    <div class="font-bold text-amber-400 mb-1">🎮 조작 안내:</div>
+                    <div>• <b>방향 변경</b>: 키보드 <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">←</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">→</kbd> 또는 터치 버튼 <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">◀</kbd> <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">▶</kbd></div>
+                    <div>• <b>드리프트(게이지 충전)</b>: <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">Shift</kbd> 키 / 버튼 지속 누르기</div>
+                    <div>• <b>부스터 사용(+1점 & 3초 2배속)</b>: <kbd class="px-1.5 py-0.5 bg-slate-800 rounded border border-slate-700">Ctrl</kbd> 키 / 버튼 (게이지 100% 시 가능)</div>
+                </div>
+            </div>
+
+            <button id="btn-start" class="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-black text-xl rounded-2xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all">
+                주행 시작하기!
+            </button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="hidden absolute inset-0 z-20 flex flex-col justify-between p-6 glass-panel bg-slate-950/95 text-center">
+            <div class="my-auto space-y-4">
+                <h2 id="gameover-title" class="text-3xl font-black text-amber-400">시간 종료!</h2>
+                
+                <div class="bg-slate-900/90 p-6 rounded-2xl border border-slate-800 space-y-3">
+                    <div>
+                        <div class="text-xs text-slate-400 font-semibold uppercase">최종 주행 거리</div>
+                        <div class="text-3xl font-black text-white"><span id="final-distance">0.0</span> m</div>
+                    </div>
+                    <div class="border-t border-slate-800 pt-3">
+                        <div class="text-xs text-slate-400 font-semibold uppercase">최종 점수 (거리 + 부스터 보너스)</div>
+                        <div class="text-4xl font-extrabold text-amber-400"><span id="final-score">0</span> 점</div>
+                    </div>
+                </div>
+
+                <div id="finish-status" class="text-sm font-semibold text-emerald-400 bg-emerald-950/40 py-2 px-4 rounded-xl border border-emerald-800/50">
+                    🎉 50m 결승선 통과 성공!
+                </div>
+            </div>
+
+            <button id="btn-restart" class="w-full py-4 bg-slate-100 hover:bg-white text-slate-950 font-black text-xl rounded-2xl shadow-lg active:scale-95 transition-all">
+                다시 하기
+            </button>
+        </div>
+
+        <!-- Mobile Touch Controls overlay -->
+        <div id="touch-controls" class="hidden absolute bottom-4 left-0 right-0 z-10 px-4 flex justify-between items-center pointer-events-auto">
+            <!-- Steering Controls -->
+            <div class="flex gap-2">
+                <button id="btn-left" class="btn-touch w-14 h-14 bg-slate-800/80 active:bg-slate-700 text-2xl font-bold rounded-2xl border border-slate-600 flex items-center justify-center shadow-lg">◀</button>
+                <button id="btn-right" class="btn-touch w-14 h-14 bg-slate-800/80 active:bg-slate-700 text-2xl font-bold rounded-2xl border border-slate-600 flex items-center justify-center shadow-lg">▶</button>
+            </div>
+            <!-- Action Controls (Drift & Boost) -->
+            <div class="flex gap-2">
+                <button id="btn-drift" class="btn-touch px-4 h-14 bg-amber-600/80 active:bg-amber-500 text-sm font-black rounded-2xl border border-amber-400 flex items-center justify-center shadow-lg">
+                    DRIFT
+                </button>
+                <button id="btn-boost" class="btn-touch px-4 h-14 bg-red-600/80 active:bg-red-500 text-sm font-black rounded-2xl border border-red-400 flex items-center justify-center shadow-lg">
+                    BOOST
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME LOGIC -->
+    <script>
+        // Game Constants & Parameters
+        const FINISH_LINE_DIST = 50; // 50m target
+        const ROAD_WIDTH = 8;
+        const ROAD_LENGTH = 200;
+
+        // State Variables
+        let isPlaying = false;
+        let distanceTraveled = 0;
+        let timeRemaining = 30.0;
+        let baseScore = 0;
+        let boostBonusScore = 0;
+        let playerX = 0; // Relative position from track center
+        let boostGauge = 0;
+        let isBoosting = false;
+        let boostTimer = 0;
+        let isSlowed = false;
+        let slowTimer = 0;
+
+        // Input state
+        const keys = { left: false, right: false, drift: false, boost: false };
+
+        // Three.js Core Globals
+        let scene, camera, renderer;
+        let roadMesh, finishMesh;
+        let obstacles = [];
+
+        // UI DOM Elements
+        let hudEl, startScreen, gameoverScreen, warningOverlay, touchControls;
+        let hudDistanceEl, hudScoreEl, hudTimerEl, hudBoostBarEl, scorePopup;
+
+        function cacheDomElements() {
+            hudEl = document.getElementById('hud');
+            startScreen = document.getElementById('start-screen');
+            gameoverScreen = document.getElementById('gameover-screen');
+            warningOverlay = document.getElementById('warning-overlay');
+            touchControls = document.getElementById('touch-controls');
+            hudDistanceEl = document.getElementById('hud-distance');
+            hudScoreEl = document.getElementById('hud-score');
+            hudTimerEl = document.getElementById('hud-timer');
+            hudBoostBarEl = document.getElementById('hud-boost-bar');
+            scorePopup = document.getElementById('score-popup');
+        }
+
+        // Initialize Three.js Scene
+        function init3D() {
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x38bdf8); // Sky blue
+
+            // 1인칭 운전자 시점 카메라 설정
+            camera = new THREE.PerspectiveCamera(65, width / height, 0.1, 1000);
+            camera.position.set(0, 1.2, 0); 
+            camera.lookAt(0, 1.2, -10);
+
+            // WebGL Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(20, 40, 20);
+            scene.add(dirLight);
+
+            // Build Procedural 3D Environment
+            createKartFront();
+            createSkylineEnvironment();
+            createRoad();
+            createFinishLine();
+            spawnObstacles();
+
+            // Resize Event Listener
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // 1인칭 시점 카트 앞부분 생성
+        let kartFrontGroup;
+        function createKartFront() {
+            kartFrontGroup = new THREE.Group();
+
+            const hoodGeo = new THREE.BoxGeometry(1.4, 0.4, 1.2);
+            const hoodMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.5, roughness: 0.3 });
+            const hood = new THREE.Mesh(hoodGeo, hoodMat);
+            hood.position.set(0, -0.35, -1.0);
+            kartFrontGroup.add(hood);
+
+            const stripeGeo = new THREE.BoxGeometry(0.3, 0.42, 1.22);
+            const stripeMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b });
+            const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+            stripe.position.set(0, -0.34, -1.0);
+            kartFrontGroup.add(stripe);
+
+            const wheelGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.2, 16);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+            
+            const leftWheel = new THREE.Mesh(wheelGeo, wheelMat);
+            leftWheel.rotation.z = Math.PI / 2;
+            leftWheel.position.set(-0.75, -0.4, -0.9);
+            kartFrontGroup.add(leftWheel);
+
+            const rightWheel = new THREE.Mesh(wheelGeo, wheelMat);
+            rightWheel.rotation.z = Math.PI / 2;
+            rightWheel.position.set(0.75, -0.4, -0.9);
+            kartFrontGroup.add(rightWheel);
+
+            scene.add(kartFrontGroup);
+        }
+
+        function createSkylineEnvironment() {
+            const group = new THREE.Group();
+            
+            const mountainGeo = new THREE.ConeGeometry(30, 20, 4);
+            const mountainMat = new THREE.MeshBasicMaterial({ color: 0x166534 });
+            for (let i = 0; i < 5; i++) {
+                const mountain = new THREE.Mesh(mountainGeo, mountainMat);
+                mountain.position.set((i - 2) * 35, 5, -120);
+                mountain.scale.set(1.5, 1, 1);
+                group.add(mountain);
+            }
+
+            scene.add(group);
+        }
+
+        function getTrackCurveX(z) {
+            return Math.sin(z * 0.08) * 3.5 + Math.cos(z * 0.03) * 2.0;
+        }
+
+        let leftWallMesh, rightWallMesh;
+        function createRoad() {
+            const roadGeo = new THREE.PlaneGeometry(ROAD_WIDTH, ROAD_LENGTH, 1, 120);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#22262f';
+            ctx.fillRect(0, 0, 512, 512);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(15, 0, 12, 512);
+            ctx.fillRect(512 - 27, 0, 12, 512);
+
+            ctx.fillStyle = '#f59e0b';
+            for(let y = 0; y < 512; y += 128) {
+                ctx.fillRect(250, y, 12, 64);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(1, 15);
+
+            const roadMat = new THREE.MeshStandardMaterial({ 
+                map: texture, 
+                roughness: 0.7,
+                side: THREE.DoubleSide
+            });
+            
+            roadMesh = new THREE.Mesh(roadGeo, roadMat);
+            roadMesh.rotation.x = -Math.PI / 2;
+            roadMesh.position.set(0, 0, -ROAD_LENGTH / 2);
+
+            const pos = roadMesh.geometry.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const z = pos.getY(i);
+                const curve = getTrackCurveX(-z);
+                pos.setX(i, pos.getX(i) + curve);
+            }
+            roadMesh.geometry.computeVertexNormals();
+            roadMesh.geometry.attributes.position.needsUpdate = true;
+
+            scene.add(roadMesh);
+
+            createFlexibleWalls();
+        }
+
+        function createFlexibleWalls() {
+            const wallMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.5 });
+            const wallGeoLeft = new THREE.BoxGeometry(0.4, 0.8, ROAD_LENGTH);
+            const wallGeoRight = new THREE.BoxGeometry(0.4, 0.8, ROAD_LENGTH);
+
+            leftWallMesh = new THREE.Mesh(wallGeoLeft, wallMat);
+            rightWallMesh = new THREE.Mesh(wallGeoRight, wallMat);
+
+            scene.add(leftWallMesh);
+            scene.add(rightWallMesh);
+        }
+
+        function createFinishLine() {
+            const finishGeo = new THREE.PlaneGeometry(ROAD_WIDTH, 3);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            for (let i = 0; i < 16; i++) {
+                for (let j = 0; j < 4; j++) {
+                    ctx.fillStyle = (i + j) % 2 === 0 ? '#ffffff' : '#000000';
+                    ctx.fillRect(i * 8, j * 8, 8, 8);
+                }
+            }
+
+            const finishTex = new THREE.CanvasTexture(canvas);
+            const finishMat = new THREE.MeshBasicMaterial({ map: finishTex, side: THREE.DoubleSide });
+            finishMesh = new THREE.Mesh(finishGeo, finishMat);
+            finishMesh.rotation.x = -Math.PI / 2;
+            finishMesh.position.set(0, 0.02, -FINISH_LINE_DIST);
+            scene.add(finishMesh);
+        }
+
+        function spawnObstacles() {
+            const stoneGeo = new THREE.DodecahedronGeometry(0.55);
+            const stoneMat = new THREE.MeshStandardMaterial({ color: 0x78716c, roughness: 0.9 });
+
+            for (let i = 0; i < 3; i++) {
+                const stone = new THREE.Mesh(stoneGeo, stoneMat);
+                stone.position.x = 0;
+                stone.position.y = 0.28;
+                stone.position.z = -20 - (i * 25) - (Math.random() * 5);
+                stone.userData = { laneOffset: (Math.random() - 0.5) * (ROAD_WIDTH - 3) };
+                stone.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+                scene.add(stone);
+                obstacles.push(stone);
+            }
+        }
+
+        function startGame() {
+            distanceTraveled = 0;
+            timeRemaining = 30.0;
+            baseScore = 0;
+            boostBonusScore = 0;
+            playerX = 0;
+            boostGauge = 0;
+            isBoosting = false;
+            boostTimer = 0;
+            isSlowed = false;
+            slowTimer = 0;
+
+            obstacles.forEach((stone, i) => {
+                stone.userData.laneOffset = (Math.random() - 0.5) * (ROAD_WIDTH - 3);
+                stone.position.z = -20 - (i * 25) - (Math.random() * 5);
+            });
+
+            startScreen.classList.add('hidden');
+            gameoverScreen.classList.add('hidden');
+            hudEl.classList.remove('hidden');
+            touchControls.classList.remove('hidden');
+
+            isPlaying = true;
+            lastTime = performance.now();
+        }
+
+        function gameOver() {
+            isPlaying = false;
+            hudEl.classList.add('hidden');
+            touchControls.classList.add('hidden');
+            warningOverlay.classList.add('hidden');
+            gameoverScreen.classList.remove('hidden');
+
+            const totalScore = Math.floor(distanceTraveled) + boostBonusScore;
+            document.getElementById('final-distance').innerText = distanceTraveled.toFixed(1);
+            document.getElementById('final-score').innerText = totalScore;
+
+            const finishStatus = document.getElementById('finish-status');
+            const titleEl = document.getElementById('gameover-title');
+
+            if (distanceTraveled >= FINISH_LINE_DIST) {
+                titleEl.innerText = "🎉 결승선 돌파!";
+                titleEl.className = "text-3xl font-black text-emerald-400";
+                finishStatus.innerText = `축하합니다! ${FINISH_LINE_DIST}m 결승선을 통과했습니다.`;
+                finishStatus.className = "text-sm font-semibold text-emerald-400 bg-emerald-950/40 py-2 px-4 rounded-xl border border-emerald-800/50";
+            } else {
+                titleEl.innerText = "⏰ 시간 종료!";
+                titleEl.className = "text-3xl font-black text-amber-400";
+                finishStatus.innerText = `결승선(${FINISH_LINE_DIST}m)까지 ${(FINISH_LINE_DIST - distanceTraveled).toFixed(1)}m 부족했습니다.`;
+                finishStatus.className = "text-sm font-semibold text-amber-400 bg-amber-950/40 py-2 px-4 rounded-xl border border-amber-800/50";
+            }
+        }
+
+        let lastTime = 0;
+        function animate(now) {
+            requestAnimationFrame(animate);
+
+            if (!isPlaying) {
+                if (renderer && scene && camera) {
+                    renderer.render(scene, camera);
+                }
+                return;
+            }
+
+            const delta = Math.min((now - lastTime) / 1000, 0.1);
+            lastTime = now;
+
+            timeRemaining -= delta;
+            if (timeRemaining <= 0) {
+                timeRemaining = 0;
+                gameOver();
+                return;
+            }
+
+            let currentSpeed = isBoosting ? 2.0 : 1.0;
+
+            if (isSlowed) {
+                slowTimer -= delta;
+                currentSpeed *= 0.5;
+                warningOverlay.classList.remove('hidden');
+                if (slowTimer <= 0) {
+                    isSlowed = false;
+                    warningOverlay.classList.add('hidden');
+                }
+            }
+
+            distanceTraveled += currentSpeed * delta * 12;
+            baseScore = Math.floor(distanceTraveled);
+
+            if (isBoosting) {
+                boostTimer -= delta;
+                if (boostTimer <= 0) {
+                    isBoosting = false;
+                }
+            }
+
+            if (keys.drift && !isBoosting) {
+                boostGauge = Math.min(100, boostGauge + 55 * delta);
+            }
+
+            if (keys.boost && boostGauge >= 100 && !isBoosting) {
+                boostGauge = 0;
+                isBoosting = true;
+                boostTimer = 3.0;
+                boostBonusScore += 1;
+                
+                scorePopup.classList.remove('opacity-0');
+                setTimeout(() => scorePopup.classList.add('opacity-0'), 800);
+            }
+
+            const turnSensitivity = keys.drift ? 11.0 : 7.0;
+            const steerSpeed = turnSensitivity * delta;
+            
+            if (keys.left) playerX -= steerSpeed;
+            if (keys.right) playerX += steerSpeed;
+
+            const maxBound = (ROAD_WIDTH / 2) - 0.7;
+            if (Math.abs(playerX) >= maxBound) {
+                playerX = Math.sign(playerX) * maxBound;
+                triggerSlowPenalty();
+            }
+
+            const roadCurveX = getTrackCurveX(distanceTraveled);
+            const aheadCurveX = getTrackCurveX(distanceTraveled + 3);
+
+            const finalPlayerX = roadCurveX + playerX;
+            
+            camera.position.set(finalPlayerX, 1.1, 0);
+            const targetX = aheadCurveX + playerX * 0.7;
+            camera.lookAt(targetX, 0.8, -4.5);
+
+            let tiltAngle = -playerX * 0.08;
+            let bodyShiftX = 0;
+            
+            if (keys.drift) {
+                const driftDirection = keys.left ? -1 : (keys.right ? 1 : (playerX < 0 ? -1 : 1));
+                tiltAngle += driftDirection * 0.22; 
+                bodyShiftX = driftDirection * 0.15;
+            }
+
+            camera.rotation.z = tiltAngle * 0.6;
+
+            if (kartFrontGroup) {
+                kartFrontGroup.position.set(finalPlayerX + bodyShiftX, 1.1, 0);
+                kartFrontGroup.rotation.y = camera.rotation.y + (keys.drift ? (keys.left ? 0.15 : -0.15) : 0);
+                kartFrontGroup.rotation.z = tiltAngle;
+            }
+
+            roadMesh.position.z = -distanceTraveled % (ROAD_LENGTH / 2);
+            roadMesh.position.x = roadCurveX;
+
+            obstacles.forEach(stone => {
+                const stoneRelZ = stone.position.z;
+                const absoluteZ = distanceTraveled + Math.abs(stoneRelZ);
+                stone.position.x = getTrackCurveX(absoluteZ) + (stone.userData.laneOffset || 0);
+                stone.position.z += currentSpeed * delta * 12;
+
+                if (stone.position.z > 2) {
+                    stone.position.z = -40 - Math.random() * 30;
+                    stone.userData.laneOffset = (Math.random() - 0.5) * (ROAD_WIDTH - 3);
+                }
+
+                const dx = stone.position.x - finalPlayerX;
+                const dz = stone.position.z - (-1.0);
+                if (Math.abs(dx) < 0.9 && Math.abs(dz) < 0.9) {
+                    triggerSlowPenalty();
+                    stone.position.z = 5;
+                }
+            });
+
+            finishMesh.position.z = -FINISH_LINE_DIST + distanceTraveled;
+            finishMesh.position.x = getTrackCurveX(FINISH_LINE_DIST);
+
+            hudDistanceEl.innerText = distanceTraveled.toFixed(1);
+            hudScoreEl.innerText = baseScore + boostBonusScore;
+            hudTimerEl.innerText = timeRemaining.toFixed(2) + 's';
+            hudBoostBarEl.style.width = boostGauge + '%';
+
+            renderer.render(scene, camera);
+        }
+
+        function triggerSlowPenalty() {
+            isSlowed = true;
+            slowTimer = 1.0;
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        }
+
+        function setupControls() {
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowLeft') keys.left = true;
+                if (e.key === 'ArrowRight') keys.right = true;
+                if (e.key === 'Shift') keys.drift = true;
+                if (e.key === 'Control') keys.boost = true;
+            });
+
+            window.addEventListener('keyup', (e) => {
+                if (e.key === 'ArrowLeft') keys.left = false;
+                if (e.key === 'ArrowRight') keys.right = false;
+                if (e.key === 'Shift') keys.drift = false;
+                if (e.key === 'Control') keys.boost = false;
+            });
+
+            const bindTouch = (btnId, keyName) => {
+                const btn = document.getElementById(btnId);
+                if (!btn) return;
+                const startHandler = (e) => { e.preventDefault(); keys[keyName] = true; };
+                const endHandler = (e) => { e.preventDefault(); keys[keyName] = false; };
+
+                btn.addEventListener('touchstart', startHandler);
+                btn.addEventListener('touchend', endHandler);
+                btn.addEventListener('mousedown', startHandler);
+                btn.addEventListener('mouseup', endHandler);
+                btn.addEventListener('mouseleave', endHandler);
+            };
+
+            bindTouch('btn-left', 'left');
+            bindTouch('btn-right', 'right');
+            bindTouch('btn-drift', 'drift');
+            bindTouch('btn-boost', 'boost');
+
+            const btnStart = document.getElementById('btn-start');
+            const btnRestart = document.getElementById('btn-restart');
+            if (btnStart) btnStart.addEventListener('click', startGame);
+            if (btnRestart) btnRestart.addEventListener('click', startGame);
+        }
+
+        window.onload = function() {
+            cacheDomElements();
+            init3D();
+            setupControls();
+            requestAnimationFrame(animate);
+        };
+    </script>
+</body>
+</html>
